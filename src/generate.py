@@ -51,6 +51,7 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
     logger.info(f"Starting generation for {len(documents)} documents...")
     
     for doc in documents:
+        print(f"on doc{doc['document_id']}")
         seed_content = doc.get("seed_prompt", "")
         if not seed_content:
             continue
