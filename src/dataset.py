@@ -287,7 +287,7 @@ def get_ticker_from_path(file_path: Path) -> str:
 
 # ── Main processing ──────────────────────────────────────────────────────────
 
-def process_filings(download_dir: str, output_file: str, min_words: int = 2000):
+def process_filings(download_dir: str, output_file: str, min_words: int = 2000, year: int = None):
     dl_path = Path(download_dir)
     if not dl_path.exists():
         logger.error(f"Download directory {dl_path} does not exist.")
@@ -306,6 +306,16 @@ def process_filings(download_dir: str, output_file: str, min_words: int = 2000):
                 continue
 
             file_path  = Path(root) / file
+            
+            if year is not None:
+                acc_num = file_path.parent.name
+                parts = acc_num.split('-')
+                if len(parts) >= 2 and parts[1].isdigit():
+                    yy = int(parts[1])
+                    file_year = 2000 + yy if yy < 50 else 1900 + yy
+                    if file_year != year:
+                        continue
+
             total_seen += 1
             ticker     = get_ticker_from_path(file_path)
 
@@ -362,13 +372,15 @@ def process_filings(download_dir: str, output_file: str, min_words: int = 2000):
 def main():
     parser = argparse.ArgumentParser(description="Download and parse SEC EDGAR 10-Q filings")
     parser.add_argument("--tickers", nargs="+",
-                        default=["AAPL", "MSFT"])
+                        default=["AAPL"])
     parser.add_argument("--download-dir",  default="./data/sec_filings")
     parser.add_argument("--output-file",   default="./data/processed_dataset.jsonl")
     parser.add_argument("--email",         required=True,
                         help="Email for SEC EDGAR rate-limiting header")
     parser.add_argument("--skip-download", action="store_true",
                         help="Skip downloading; reprocess already-downloaded filings")
+    parser.add_argument("--year", type=int, default=2023,
+                        help="Only download and process documents from this year (e.g., 2025)")
     args = parser.parse_args()
 
     if not args.skip_download:
@@ -377,11 +389,14 @@ def main():
         for ticker in args.tickers:
             logger.info(f"  Fetching {ticker}…")
             try:
-                dl.get("10-Q", ticker, limit=4)
+                if args.year:
+                    dl.get("10-Q", ticker, after=f"{args.year}-01-01", before=f"{args.year}-12-31")
+                else:
+                    dl.get("10-Q", ticker, limit=4)
             except Exception as e:
                 logger.error(f"  Failed {ticker}: {e}")
 
-    process_filings(args.download_dir, args.output_file)
+    process_filings(args.download_dir, args.output_file, year=args.year)
 
 
 if __name__ == "__main__":
