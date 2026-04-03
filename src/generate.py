@@ -66,25 +66,44 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
         
+        # continuations = []
+        # for i in range(num_continuations):
+        #     set_seed(42 + i)  # Independent random seed per continuation
+        #     logger.debug(f"Generating continuation {i+1} for {doc_id}...")
+            
+        #     with torch.no_grad():
+        #         outputs = model.generate(
+        #             **inputs,
+        #             max_new_tokens=512,
+        #             temperature=0.7,
+        #             top_p=0.9,
+        #             do_sample=True,
+        #             pad_token_id=tokenizer.eos_token_id
+        #         )
+        logger.debug(f"Batch generating {num_continuations} continuations for {doc_id}...")
+        
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=512,
+                temperature=0.7,
+                top_p=0.9,
+                do_sample=True,
+                num_return_sequences=num_continuations, # Tells the GPU to batch generate X responses
+                pad_token_id=tokenizer.eos_token_id
+            )
+        
         continuations = []
+        # Loop through the batched outputs to decode them
         for i in range(num_continuations):
-            set_seed(42 + i)  # Independent random seed per continuation
-            logger.debug(f"Generating continuation {i+1} for {doc_id}...")
-            
-            with torch.no_grad():
-                outputs = model.generate(
-                    **inputs,
-                    max_new_tokens=512,
-                    temperature=0.7,
-                    top_p=0.9,
-                    do_sample=True,
-                    pad_token_id=tokenizer.eos_token_id
-                )
-            
             # Slice off the prompt to get just the generated tokens
-            generated_tokens = outputs[0][inputs.input_ids.shape[1]:]
+            generated_tokens = outputs[i][inputs.input_ids.shape[1]:]
             continuation_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-            continuations.append(continuation_text)
+            continuations.append(continuation_text)  
+            # # Slice off the prompt to get just the generated tokens
+            # generated_tokens = outputs[0][inputs.input_ids.shape[1]:]
+            # continuation_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            # continuations.append(continuation_text)
             
         # Store result
         result_record = {
