@@ -362,7 +362,7 @@ def process_filings(download_dir: str, output_file: str, min_words: int = 2000):
 def main():
     parser = argparse.ArgumentParser(description="Download and parse SEC EDGAR 10-Q filings")
     parser.add_argument("--tickers", nargs="+",
-                        default=["AAPL", "MSFT", "GOOGL", "AMZN", "JNJ", "JPM"])
+                        default=["AAPL", "MSFT"])
     parser.add_argument("--download-dir",  default="./data/sec_filings")
     parser.add_argument("--output-file",   default="./data/processed_dataset.jsonl")
     parser.add_argument("--email",         required=True,
