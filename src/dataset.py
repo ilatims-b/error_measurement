@@ -248,18 +248,28 @@ def extract_mda_section(raw_file_content: str, file_path: str) -> str:
         else:
             logger.debug(f"  Strict match too short ({len(longest_match.split())} words). Forcing loose fallback.")
 
-    # Step 4 – loose fallback
-    loose = re.compile(
-        r"(?:Item|ITEM)\s*[27][A-Z]?(?:[\.\-\:]|\s)*Management(?:['’`]?s|['’`]?\s*s|s)?\s+Discussion\s+and\s+Analysis.*",
-        re.IGNORECASE | re.DOTALL,
-    )
+    # Step 4 – loose fallback search (avoiding slow regex)
+    fallback_pattern = r"Management(?:['’`]?s|['’`]?\s*s|s)?\s+Discussion\s+and\s+Analysis"
+    matches = list(re.finditer(fallback_pattern, plain, re.IGNORECASE))
     
-    loose_matches = list(loose.finditer(plain))
-    if loose_matches:
-        longest_loose = max(loose_matches, key=lambda m: len(m.group(0))).group(0)
-        logger.debug(f"  MD&A matched (loose fallback): {file_path}")
-        # Increased cap from 15k to 350,000 characters to accommodate massive bank filings
-        return longest_loose[:350_000].strip()
+    if matches:
+        best_chunk = ""
+        for m in matches:
+            start_idx = m.end()
+            # The next section is generally "Quantitative and Qualitative Disclosures About Market Risk"
+            end_idx = re.search(r"Quantitative\s+and\s+Qualitative\s+Disclosures", plain[start_idx:], re.IGNORECASE)
+            
+            if end_idx:
+                chunk = plain[start_idx : start_idx + end_idx.start()].strip()
+            else:
+                chunk = plain[start_idx : start_idx + 150_000].strip()
+                
+            if len(chunk) > len(best_chunk):
+                best_chunk = chunk
+                
+        if len(best_chunk.split()) > 500:
+            logger.debug(f"  MD&A matched (heuristic fallback): {file_path}")
+            return best_chunk
 
     return ""
 # ── Complexity ───────────────────────────────────────────────────────────────

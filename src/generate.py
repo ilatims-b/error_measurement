@@ -25,7 +25,7 @@ def load_model_and_tokenizer(model_name: str):
     logger.info("Model load complete.")
     return model, tokenizer
 
-def run_generations(input_file: str, output_file: str, model_name: str, num_continuations: int = 3):
+def run_generations(input_file: str, output_file: str, model_name: str, num_continuations: int = 3, max_new_tokens: int = 512, temperature: float = 0.7, top_p: float = 0.9):
     in_path = Path(input_file)
     if not in_path.exists():
         logger.error(f"Input dataset {in_path} not found.")
@@ -86,9 +86,9 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=512,
-                temperature=0.7,
-                top_p=0.9,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
                 do_sample=True,
                 num_return_sequences=num_continuations, # Tells the GPU to batch generate X responses
                 pad_token_id=tokenizer.eos_token_id
@@ -128,9 +128,12 @@ def main():
     parser.add_argument("--output-file", type=str, default="./data/generations.jsonl", help="Path to output generations JSONL")
     parser.add_argument("--model-name", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct", help="HuggingFace model string")
     parser.add_argument("--num-continuations", type=int, default=3, help="Number of independent generations per document")
+    parser.add_argument("--max-new-tokens", type=int, default=512, help="Maximum number of new tokens to generate")
+    parser.add_argument("--temperature", type=float, default=0.7, help="Generation temperature")
+    parser.add_argument("--top-p", type=float, default=0.9, help="Generation top_p sampling parameter")
     args = parser.parse_args()
     
-    run_generations(args.input_file, args.output_file, args.model_name, args.num_continuations)
+    run_generations(args.input_file, args.output_file, args.model_name, args.num_continuations, args.max_new_tokens, args.temperature, args.top_p)
 
 if __name__ == "__main__":
     main()

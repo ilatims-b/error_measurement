@@ -40,7 +40,7 @@ Return ONLY the letter (A, B, or C). Do not return anything else.
 """
 
 class FactExtractionPipeline:
-    def __init__(self, api_key: str, base_url: str = "https://api.x.ai/v1", model_name: str = "grok-2-latest"):
+    def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", model_name: str = "llama-3.3-70b-versatile"):
         """
         Initializes the pipeline to use an OpenAI-compatible API (e.g. Grok or OpenAI).
         """
@@ -75,10 +75,17 @@ class FactExtractionPipeline:
             )
             raw_response = response.choices[0].message.content.strip()
             
-            # Clean up markdown if the model hallucinates it despite instructions
-            if raw_response.startswith("```json"):
-                raw_response = raw_response[7:-3].strip()
-            
+            # Robustly extract JSON array in case Groq returns chatty markdown
+            import re
+            json_match = re.search(r'\[\s*\{.*?\}\s*\]', raw_response, re.DOTALL)
+            if json_match:
+                raw_response = json_match.group(0)
+            else:
+                 # Fallback if the model returned just a single JSON object instead of an array
+                 json_obj_match = re.search(r'\{.*?\}', raw_response, re.DOTALL)
+                 if json_obj_match:
+                     raw_response = f"[{json_obj_match.group(0)}]"
+
             claims = json.loads(raw_response)
             # Filter just in case the model returned a FORWARD
             return [c for c in claims if c.get("type") in ["NUMERIC", "ENTITY", "DIRECTIONAL"]]
@@ -105,13 +112,17 @@ class FactExtractionPipeline:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.0,
-                max_tokens=2,
+                max_tokens=50, # Increased for Groq compatibility if it generates preamble
             )
-            answer = response.choices[0].message.content.strip()
-            # Normalize response (e.g. catch "(A)" or "A")
-            if "A" in answer: return "A"
-            if "B" in answer: return "B"
-            if "C" in answer: return "C"
+            answer = response.choices[0].message.content.strip().upper()
+            import re
+            
+            # Normalize response
+            match = re.search(r'\b([ABC])\b', answer)
+            if match:
+                return match.group(1)
+            if "SUPPORTED" in answer: return "A"
+            if "CONTRADICTED" in answer: return "B"
             return "C"  # Default to not verifiable
         except Exception as e:
             logger.error(f"Failed to verify claim: {e}")
@@ -176,7 +187,7 @@ def main():
     parser.add_argument("--gen-file", type=str, default="./data/generations.jsonl", help="Input generations JSONL")
     parser.add_argument("--source-file", type=str, default="./data/processed_dataset.jsonl", help="Original source documents JSONL")
     parser.add_argument("--output-file", type=str, default="./data/evaluated_generations.jsonl", help="Output verification JSONL")
-    parser.add_argument("--api-key", type=str, required=True, help="API Key for OpenAI/Grok")
+    parser.add_argument("--api-key", type=str, required=True, help="API Key for OpenAI/Grok/Groq")
     parser.add_argument("--base-url", type=str, default="https://api.x.ai/v1", help="API base URL")
     parser.add_argument("--model-name", type=str, default="grok-2-latest", help="Model name for extraction/verification")
     args = parser.parse_args()
