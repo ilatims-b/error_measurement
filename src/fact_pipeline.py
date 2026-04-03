@@ -40,13 +40,15 @@ Return ONLY the letter (A, B, or C). Do not return anything else.
 """
 
 class FactExtractionPipeline:
-    def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", model_name: str = "llama-3.3-70b-versatile"):
+    def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", model_name: str = "llama-3.3-70b-versatile", extraction_prompt: str = None, verification_prompt: str = None):
         """
         Initializes the pipeline to use an OpenAI-compatible API (e.g. Grok or OpenAI).
         """
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.encoder = tiktoken.get_encoding("cl100k_base")
+        self.extraction_prompt = extraction_prompt if extraction_prompt else EXTRACTION_PROMPT
+        self.verification_prompt = verification_prompt if verification_prompt else VERIFICATION_PROMPT
 
     def chunk_text(self, text: str, chunk_size: int = 128) -> List[str]:
         """
@@ -63,11 +65,12 @@ class FactExtractionPipeline:
         """
         Uses the LLM API to extract claims into JSON.
         """
+        raw_response = "N/A"
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "system", "content": EXTRACTION_PROMPT},
+                    {"role": "system", "content": self.extraction_prompt},
                     {"role": "user", "content": f"Text chunk to extract claims from:\n{text_chunk}"}
                 ],
                 temperature=0.0,
@@ -91,14 +94,14 @@ class FactExtractionPipeline:
             return [c for c in claims if c.get("type") in ["NUMERIC", "ENTITY", "DIRECTIONAL"]]
         except Exception as e:
             logger.error(f"Failed to extract claims: {e}. Raw response: {raw_response}")
-            return []
+            return []    
 
     def verify_claim(self, claim: Dict, source_passage: str) -> str:
         """
         Uses the LLM API to verify a single claim against the source document.
         """
         try:
-            prompt = VERIFICATION_PROMPT.format(
+            prompt = self.verification_prompt.format(
                 passage=source_passage,
                 type=claim.get("type", "UNKNOWN"),
                 subject=claim.get("subject", ""),
@@ -128,7 +131,7 @@ class FactExtractionPipeline:
             logger.error(f"Failed to verify claim: {e}")
             return "C"
 
-    def process_generation_record(self, record: Dict, source_docs_map: Dict[str, str]) -> Dict:
+    def process_generation_record(self, record: Dict, source_docs_map: Dict[str, str], chunk_size: int = 128) -> Dict:
         """
         Process a single record containing 3 continuations against the original document.
         """
@@ -141,7 +144,7 @@ class FactExtractionPipeline:
         result["evaluation_results"] = []
         
         for cont_idx, continuationtext in enumerate(record.get("continuations", [])):
-            chunks = self.chunk_text(continuationtext, chunk_size=128)
+            chunks = self.chunk_text(continuationtext, chunk_size=chunk_size)
             cont_eval = {"continuation_index": cont_idx, "chunks": []}
             
             # For 4 chunks only (C1 to C4)
@@ -190,6 +193,9 @@ def main():
     parser.add_argument("--api-key", type=str, required=True, help="API Key for OpenAI/Grok/Groq")
     parser.add_argument("--base-url", type=str, default="https://api.x.ai/v1", help="API base URL")
     parser.add_argument("--model-name", type=str, default="grok-2-latest", help="Model name for extraction/verification")
+    parser.add_argument("--chunk-size", type=int, default=128, help="Token size per evaluation chunk")
+    parser.add_argument("--extraction-prompt", type=str, default=None, help="Custom prompt for claim extraction")
+    parser.add_argument("--verification-prompt", type=str, default=None, help="Custom prompt for claim verification")
     args = parser.parse_args()
 
     # Load source map
@@ -200,7 +206,13 @@ def main():
                 d = json.loads(line)
                 source_docs[d["document_id"]] = d["full_mda_text"]
                 
-    pipeline = FactExtractionPipeline(args.api_key, args.base_url, args.model_name)
+    pipeline = FactExtractionPipeline(
+        args.api_key, 
+        args.base_url, 
+        args.model_name,
+        extraction_prompt=args.extraction_prompt,
+        verification_prompt=args.verification_prompt
+    )
     
     out_path = Path(args.output_file)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -212,7 +224,7 @@ def main():
                 if line.strip():
                     record = json.loads(line)
                     logger.info(f"Processing document: {record.get('document_id')}")
-                    eval_record = pipeline.process_generation_record(record, source_docs)
+                    eval_record = pipeline.process_generation_record(record, source_docs, chunk_size=args.chunk_size)
                     out_f.write(json.dumps(eval_record) + "\n")
                     out_f.flush()
 
