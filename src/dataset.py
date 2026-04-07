@@ -297,7 +297,7 @@ def get_ticker_from_path(file_path: Path) -> str:
 
 # ── Main processing ──────────────────────────────────────────────────────────
 
-def process_filings(download_dir: str, output_file: str, min_words: int = 2000, year: int = None):
+def process_filings(download_dir: str, output_file: str, min_words: int = 2000, year: int = None, seed_tokens: int = 200):
     dl_path = Path(download_dir)
     if not dl_path.exists():
         logger.error(f"Download directory {dl_path} does not exist.")
@@ -353,7 +353,7 @@ def process_filings(download_dir: str, output_file: str, min_words: int = 2000, 
             tokens       = encoder.encode(mda_text)
             total_tokens = len(tokens)
             phi_score, num_numeric = calculate_complexity_phi(mda_text, total_tokens)
-            seed_prompt  = encoder.decode(tokens[:200])
+            seed_prompt  = encoder.decode(tokens[:seed_tokens])
 
             valid_docs.append({
                 "document_id":          str(file_path),
@@ -391,6 +391,8 @@ def main():
                         help="Skip downloading; reprocess already-downloaded filings")
     parser.add_argument("--year", type=int, default=2023,
                         help="Only download and process documents from this year (e.g., 2025)")
+    parser.add_argument("--seed-tokens", type=int, default=200,
+                        help="Number of tokens to use for seed prompt")
     args = parser.parse_args()
 
     if not args.skip_download:
@@ -406,7 +408,7 @@ def main():
             except Exception as e:
                 logger.error(f"  Failed {ticker}: {e}")
 
-    process_filings(args.download_dir, args.output_file, year=args.year)
+    process_filings(args.download_dir, args.output_file, year=args.year, seed_tokens=args.seed_tokens)
 
 
 if __name__ == "__main__":

@@ -16,4 +16,5 @@ echo "=========================================="
 python "${SCRIPT_DIR}/dataset.py" \
     --email "${SEC_EMAIL}" \
     --download-dir "${DATA_DIR}/sec_filings" \
-    --output-file "${DATASET_JSONL}"
+    --output-file "${DATASET_JSONL}" \
+    --seed-tokens 200

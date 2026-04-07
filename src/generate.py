@@ -81,7 +81,7 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
         #             do_sample=True,
         #             pad_token_id=tokenizer.eos_token_id
         #         )
-        logger.debug(f"Batch generating {num_continuations} continuations for {doc_id}...")
+        logger.debug(f"Batch generating {num_continuations} continuations for {doc_id}")
         
         with torch.no_grad():
             outputs = model.generate(
