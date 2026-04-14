@@ -287,17 +287,22 @@ def calculate_complexity_phi(text: str, total_tokens: int) -> Tuple[float, int]:
 
 # ── Path helper ──────────────────────────────────────────────────────────────
 
-def get_ticker_from_path(file_path: Path) -> str:
+def get_ticker_and_doc_from_path(file_path: Path) -> Tuple[str, str]:
     parts = file_path.parts
+    # Typical path: DATA_DIR/sec-edgar-filings/TICKER/DOC_TYPE/ACCESSION/full-submission.txt
+    # We look for common SEC types as markers
+    sec_types = {"10-Q"}
     for i, part in enumerate(parts):
-        if part.upper() in ("10-Q"):
-            return parts[i - 1] if i > 0 else "UNKNOWN"
-    return parts[-4] if len(parts) >= 4 else "UNKNOWN"
+        up = part.upper()
+        if up in sec_types:
+            ticker = parts[i - 1] if i > 0 else "UNKNOWN"
+            return ticker, up
+    return "UNKNOWN", "UNKNOWN"
 
 
 # ── Main processing ──────────────────────────────────────────────────────────
 
-def process_filings(download_dir: str, output_file: str, min_words: int = 2000, year: int = None, seed_tokens: int = 200):
+def process_filings(download_dir: str, output_file: str, tickers: list = None, doc_types: list = None, min_words: int = 2000, year: int = None, seed_tokens: int = 200):
     dl_path = Path(download_dir)
     if not dl_path.exists():
         logger.error(f"Download directory {dl_path} does not exist.")
@@ -327,7 +332,12 @@ def process_filings(download_dir: str, output_file: str, min_words: int = 2000, 
                         continue
 
             total_seen += 1
-            ticker     = get_ticker_from_path(file_path)
+            ticker, doc_type = get_ticker_and_doc_from_path(file_path)
+
+            if tickers and ticker.upper() not in [t.upper() for t in tickers]:
+                continue
+            if doc_types and doc_type.upper() not in [d.upper() for d in doc_types]:
+                continue
 
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -382,7 +392,9 @@ def process_filings(download_dir: str, output_file: str, min_words: int = 2000, 
 def main():
     parser = argparse.ArgumentParser(description="Download and parse SEC EDGAR 10-Q filings")
     parser.add_argument("--tickers", nargs="+",
-                        default=["AAPL"])
+                        default=["AAPL"], help="Tickers to process (e.g. AAPL GOOG)")
+    parser.add_argument("--doc-types", nargs="+",
+                        default=["10-Q"], help="Document types to process (e.g. 10-Q 10-K)")
     parser.add_argument("--download-dir",  default="./data/sec_filings")
     parser.add_argument("--output-file",   default="./data/processed_dataset.jsonl")
     parser.add_argument("--email",         required=True,
@@ -396,19 +408,22 @@ def main():
     args = parser.parse_args()
 
     if not args.skip_download:
-        logger.info(f"Downloading 10-Q filings for {args.tickers}…")
+        logger.info(f"Downloading {args.doc_types} filings for {args.tickers}…")
         dl = Downloader("Research", args.email, args.download_dir)
         for ticker in args.tickers:
-            logger.info(f"  Fetching {ticker}…")
-            try:
-                if args.year:
-                    dl.get("10-Q", ticker, after=f"{args.year}-01-01", before=f"{args.year}-12-31")
-                else:
-                    dl.get("10-Q", ticker, limit=4)
-            except Exception as e:
-                logger.error(f"  Failed {ticker}: {e}")
+            for doc_type in args.doc_types:
+                logger.info(f"  Fetching {ticker} {doc_type}…")
+                try:
+                    if args.year:
+                        dl.get(doc_type, ticker, after=f"{args.year}-01-01", before=f"{args.year}-12-31")
+                    else:
+                        dl.get(doc_type, ticker, limit=4)
+                except Exception as e:
+                    logger.error(f"  Failed {ticker} {doc_type}: {e}")
 
-    process_filings(args.download_dir, args.output_file, year=args.year, seed_tokens=args.seed_tokens)
+    process_filings(args.download_dir, args.output_file, 
+                    tickers=args.tickers, doc_types=args.doc_types,
+                    year=args.year, seed_tokens=args.seed_tokens)
 
 
 if __name__ == "__main__":
