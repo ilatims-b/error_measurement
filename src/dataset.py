@@ -380,8 +380,7 @@ def process_filings(download_dir: str, output_file: str, tickers: list = None, d
     out_path = Path(output_file)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
-        for doc in valid_docs:
-            f.write(json.dumps(doc) + "\n")
+        json.dump(valid_docs, f, indent=2, ensure_ascii=False)
 
     logger.info(
         f"Done. Scanned {total_seen} files → {len(valid_docs)} valid documents "
@@ -396,7 +395,7 @@ def main():
     parser.add_argument("--doc-types", nargs="+",
                         default=["10-Q"], help="Document types to process (e.g. 10-Q 10-K)")
     parser.add_argument("--download-dir",  default="./data/sec_filings")
-    parser.add_argument("--output-file",   default="./data/processed_dataset.jsonl")
+    parser.add_argument("--output-file",   default="./data/processed_dataset.json")
     parser.add_argument("--email",         required=True,
                         help="Email for SEC EDGAR rate-limiting header")
     parser.add_argument("--skip-download", action="store_true",

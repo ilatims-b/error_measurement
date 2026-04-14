@@ -6,9 +6,9 @@ set -e
 # Configuration
 DATA_DIR="${DATA_DIR:-./data}"
 SCRIPT_DIR="${SCRIPT_DIR:-./src}"
-DATASET_JSONL="${DATASET_JSONL:-${DATA_DIR}/processed_dataset.jsonl}"
-GENERATIONS_JSONL="${GENERATIONS_JSONL:-${DATA_DIR}/generations.jsonl}"
-EVALUATED_JSONL="${EVALUATED_JSONL:-${DATA_DIR}/evaluated_generations.jsonl}"
+DATASET_JSON="${DATASET_JSON:-${DATA_DIR}/processed_dataset.json}"
+GENERATIONS_JSON="${GENERATIONS_JSON:-${DATA_DIR}/generations.json}"
+EVALUATED_JSON="${EVALUATED_JSON:-${DATA_DIR}/evaluated_generations.json}"
 
 # API settings
 API_KEY="${API_KEY}"
@@ -25,9 +25,9 @@ echo " Step 3: Fact Extraction and Verification"
 echo "=========================================="
 
 python "${SCRIPT_DIR}/fact_pipeline.py" \
-    --gen-file "${GENERATIONS_JSONL}" \
-    --source-file "${DATASET_JSONL}" \
-    --output-file "${EVALUATED_JSONL}" \
+    --gen-file "${GENERATIONS_JSON}" \
+    --source-file "${DATASET_JSON}" \
+    --output-file "${EVALUATED_JSON}" \
     --api-key "${API_KEY}" \
     --base-url "${BASE_URL}" \
     --model-name "${MODEL_NAME}" \

@@ -187,9 +187,9 @@ class FactExtractionPipeline:
 
 def main():
     parser = argparse.ArgumentParser(description="Extract and verify factual claims using LLM APIs.")
-    parser.add_argument("--gen-file", type=str, default="./data/generations.jsonl", help="Input generations JSONL")
-    parser.add_argument("--source-file", type=str, default="./data/processed_dataset.jsonl", help="Original source documents JSONL")
-    parser.add_argument("--output-file", type=str, default="./data/evaluated_generations.jsonl", help="Output verification JSONL")
+    parser.add_argument("--gen-file", type=str, default="./data/generations.json", help="Input generations JSON")
+    parser.add_argument("--source-file", type=str, default="./data/processed_dataset.json", help="Original source documents JSON")
+    parser.add_argument("--output-file", type=str, default="./data/evaluated_generations.json", help="Output verification JSON")
     parser.add_argument("--api-key", type=str, required=True, help="API Key for OpenAI/Grok/Groq")
     parser.add_argument("--base-url", type=str, default="https://api.x.ai/v1", help="API base URL")
     parser.add_argument("--model-name", type=str, default="grok-2-latest", help="Model name for extraction/verification")
@@ -201,10 +201,8 @@ def main():
     # Load source map
     source_docs = {}
     with open(args.source_file, "r") as f:
-        for line in f:
-            if line.strip():
-                d = json.loads(line)
-                source_docs[d["document_id"]] = d["full_mda_text"]
+        for d in json.load(f):
+            source_docs[d["document_id"]] = d["full_mda_text"]
                 
     pipeline = FactExtractionPipeline(
         args.api_key, 
@@ -218,15 +216,15 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
     
     logger.info("Starting fact extraction and verification pipeline...")
+    all_evals = []
+    with open(args.gen_file, "r") as in_f:
+        for record in json.load(in_f):
+            logger.info(f"Processing document: {record.get('document_id')}")
+            eval_record = pipeline.process_generation_record(record, source_docs, chunk_size=args.chunk_size)
+            all_evals.append(eval_record)
+
     with open(args.output_file, "w") as out_f:
-        with open(args.gen_file, "r") as in_f:
-            for line in in_f:
-                if line.strip():
-                    record = json.loads(line)
-                    logger.info(f"Processing document: {record.get('document_id')}")
-                    eval_record = pipeline.process_generation_record(record, source_docs, chunk_size=args.chunk_size)
-                    out_f.write(json.dumps(eval_record) + "\n")
-                    out_f.flush()
+        json.dump(all_evals, out_f, indent=2, ensure_ascii=False)
 
     logger.info(f"Pipeline complete. Output saved to {args.output_file}")
 

@@ -31,11 +31,8 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
         logger.error(f"Input dataset {in_path} not found.")
         return
 
-    documents = []
     with open(in_path, "r") as f:
-        for line in f:
-            if line.strip():
-                documents.append(json.loads(line))
+        documents = json.load(f)
     
     if not documents:
         logger.warning("No documents found to process.")
@@ -46,7 +43,7 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
     out_path = Path(output_file)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     
-    out_f = open(out_path, "w", encoding="utf-8")
+    all_results = []
     
     logger.info(f"Starting generation for {len(documents)} documents...")
     
@@ -114,18 +111,18 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
             "continuations": continuations,
             "phi_complexity_score": doc.get("phi_complexity_score", 0.0)
         }
-        out_f.write(json.dumps(result_record) + "\n")
-        out_f.flush()
+        all_results.append(result_record)
         
         logger.info(f"Completed {num_continuations} generations for {doc_id}.")
-        
-    out_f.close()
+    
+    with open(out_path, "w", encoding="utf-8") as out_f:
+        json.dump(all_results, out_f, indent=2, ensure_ascii=False)
     logger.info(f"All generations finished. Results saved to {output_file}.")
 
 def main():
     parser = argparse.ArgumentParser(description="Generate 512-token continuations using Meta-Llama-3-8B-Instruct")
-    parser.add_argument("--input-file", type=str, default="./data/processed_dataset.jsonl", help="Path to input dataset JSONL")
-    parser.add_argument("--output-file", type=str, default="./data/generations.jsonl", help="Path to output generations JSONL")
+    parser.add_argument("--input-file", type=str, default="./data/processed_dataset.json", help="Path to input dataset JSON")
+    parser.add_argument("--output-file", type=str, default="./data/generations.json", help="Path to output generations JSON")
     parser.add_argument("--model-name", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct", help="HuggingFace model string")
     parser.add_argument("--num-continuations", type=int, default=3, help="Number of independent generations per document")
     parser.add_argument("--max-new-tokens", type=int, default=512, help="Maximum number of new tokens to generate")

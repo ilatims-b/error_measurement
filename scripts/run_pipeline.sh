@@ -6,9 +6,9 @@ set -e
 # Configuration
 export DATA_DIR="./data"
 export SCRIPT_DIR="./src"
-export DATASET_JSONL="${DATA_DIR}/processed_dataset.jsonl"
-export GENERATIONS_JSONL="${DATA_DIR}/generations.jsonl"
-export EVALUATED_JSONL="${DATA_DIR}/evaluated_generations.jsonl"
+export DATASET_JSON="${DATA_DIR}/processed_dataset.json"
+export GENERATIONS_JSON="${DATA_DIR}/generations.json"
+export EVALUATED_JSON="${DATA_DIR}/evaluated_generations.json"
 
 # User-specific configuration (override these as needed)
 export SEC_EMAIL="ce24b119@smail.iitm.ac.in"
@@ -31,5 +31,5 @@ mkdir -p "${DATA_DIR}"
 echo ""
 echo "=========================================="
 echo " Pipeline Execution Complete!"
-echo " Check ${EVALUATED_JSONL} for final results."
+echo " Check ${EVALUATED_JSON} for final results."
 echo "=========================================="
