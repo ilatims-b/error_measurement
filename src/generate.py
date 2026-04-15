@@ -60,7 +60,7 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
         
         # System instructions to enforce identical generation pattern
         messages = [
-            {"role": "system", "content": "You are a precise financial assistant. Continue the following financial document excerpt exactly as it would appear in an SEC filing, without hallucinating details. DO NOT REPEAT the prompt."},
+            {"role": "system", "content": "You are a precise financial assistant. Continue the following financial document excerpt exactly as it would appear in an SEC filing, without hallucinating details. DO NOT REPEAT the prompt. Your task is to write ONLY the continuation of the text. Do NOT repeat, restate, or summarise the excerpt you are given. Begin writing new content immediately from where the excerpt ends."},
             {"role": "user", "content": f"Excerpt:\n{seed_content}"}
         ]
         
