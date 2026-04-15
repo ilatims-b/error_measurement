@@ -12,18 +12,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 def load_model_and_tokenizer(model_name: str):
-    logger.info(f"Loading model: {model_name} on GPU (bfloat16)...")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    logger.info(f"Loading model: {model_name} on GPU (fp16)...")
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     tokenizer.pad_token = tokenizer.eos_token
-    
+
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
-        torch_dtype=torch.bfloat16
+        torch_dtype=torch.float16
     )
+
     model.eval()
     logger.info("Model load complete.")
     return model, tokenizer
+
 
 def run_generations(input_file: str, output_file: str, model_name: str, num_continuations: int = 3, max_new_tokens: int = 512, temperature: float = 0.7, top_p: float = 0.9):
     in_path = Path(input_file)
