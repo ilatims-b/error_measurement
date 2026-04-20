@@ -79,7 +79,10 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
         #             do_sample=True,
         #             pad_token_id=tokenizer.eos_token_id
         #         )
-        logger.debug(f"Batch generating {num_continuations} continuations for {doc_id}")
+        num_candidates = 5
+        target_len = max_new_tokens
+        
+        logger.debug(f"Batch generating {num_candidates} candidates for {doc_id}")
         
         with torch.no_grad():
             outputs = model.generate(
@@ -88,22 +91,38 @@ def run_generations(input_file: str, output_file: str, model_name: str, num_cont
                 temperature=temperature,
                 top_p=top_p,
                 do_sample=True,
-                num_return_sequences=num_continuations, # Tells the GPU to batch generate X responses
+                num_return_sequences=num_candidates,
                 pad_token_id=tokenizer.eos_token_id
             )
         
-        continuations = []
-        # Loop through the batched outputs to decode them
-        for i in range(num_continuations):
-            # Slice off the prompt to get just the generated tokens
-            generated_tokens = outputs[i][inputs.input_ids.shape[1]:]
+        # --- Decode all candidates ---
+        candidates = []
+        
+        for i in range(num_candidates):
+            generated_tokens = outputs[i, inputs.input_ids.shape[1]:]
             continuation_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-            continuations.append(continuation_text)  
-            # # Slice off the prompt to get just the generated tokens
-            # generated_tokens = outputs[0][inputs.input_ids.shape[1]:]
-            # continuation_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
-            # continuations.append(continuation_text)
             
+            length = len(generated_tokens)
+            
+            candidates.append({
+                "text": continuation_text,
+                "length": length
+            })
+        
+        # --- Filter + pick best 3 ---
+        min_len = int(0.8 * target_len)
+        
+        filtered = [c for c in candidates if c["length"] >= min_len]
+        
+        # fallback if too strict
+        if len(filtered) < num_continuations:
+            filtered = candidates
+        
+        # sort by closeness to 512 tokens
+        filtered.sort(key=lambda x: abs(x["length"] - target_len))
+        
+        # final 3 outputs
+        continuations = [c["text"] for c in filtered[:num_continuations]]
         # Store result
         result_record = {
             "document_id": doc_id,
