@@ -1,6 +1,8 @@
 import argparse
 import json
 import logging
+import time
+from collections import deque
 from pathlib import Path
 from typing import List, Dict
 
@@ -49,6 +51,54 @@ class FactExtractionPipeline:
         self.encoder = tiktoken.get_encoding("cl100k_base")
         self.extraction_prompt = extraction_prompt if extraction_prompt else EXTRACTION_PROMPT
         self.verification_prompt = verification_prompt if verification_prompt else VERIFICATION_PROMPT
+        
+        # Groq llama-3.3-70b-versatile limits: 30 RPM, 12,000 TPM
+        # We will use slightly lower limits to be safe: 28 RPM, 11000 TPM
+        self.max_rpm = 28
+        self.max_tpm = 11000
+        self.request_timestamps = deque()
+        self.token_usage = deque()
+
+    def _wait_for_rate_limit(self, estimated_tokens: int):
+        now = time.time()
+        
+        # clean old timestamps
+        while self.request_timestamps and now - self.request_timestamps[0] > 60:
+            self.request_timestamps.popleft()
+        while self.token_usage and now - self.token_usage[0][0] > 60:
+            self.token_usage.popleft()
+            
+        current_tokens_in_minute = sum(t[1] for t in self.token_usage)
+        
+        while len(self.request_timestamps) >= self.max_rpm or (current_tokens_in_minute + estimated_tokens) > self.max_tpm:
+            now = time.time()
+            sleep_times = []
+            if len(self.request_timestamps) >= self.max_rpm:
+                sleep_times.append(60 - (now - self.request_timestamps[0]))
+            if (current_tokens_in_minute + estimated_tokens) > self.max_tpm:
+                if self.token_usage:
+                    sleep_times.append(60 - (now - self.token_usage[0][0]))
+                else:
+                    break # Single request exceeds TPM limit; must proceed and see if API accepts it
+                    
+            if not sleep_times:
+                break
+                
+            sleep_duration = max(sleep_times)
+            if sleep_duration > 0:
+                logger.info(f"Rate limit approaching. Sleeping for {sleep_duration:.2f} seconds...")
+                time.sleep(sleep_duration + 0.1) # little extra to be safe
+                
+            now = time.time()
+            # clean again
+            while self.request_timestamps and now - self.request_timestamps[0] > 60:
+                self.request_timestamps.popleft()
+            while self.token_usage and now - self.token_usage[0][0] > 60:
+                self.token_usage.popleft()
+            current_tokens_in_minute = sum(t[1] for t in self.token_usage)
+
+        self.request_timestamps.append(time.time())
+        self.token_usage.append((time.time(), estimated_tokens))
 
     def chunk_text(self, text: str, chunk_size: int = 128) -> List[str]:
         """
@@ -65,6 +115,10 @@ class FactExtractionPipeline:
         """
         Uses the LLM API to extract claims into JSON.
         """
+        prompt_text = f"Text chunk to extract claims from:\n{text_chunk}"
+        num_tokens = len(self.encoder.encode(self.extraction_prompt + prompt_text)) + 1024
+        self._wait_for_rate_limit(num_tokens)
+        
         raw_response = "N/A"
         try:
             response = self.client.chat.completions.create(
@@ -101,6 +155,12 @@ class FactExtractionPipeline:
         Uses the LLM API to verify a single claim against the source document.
         """
         try:
+            MAX_PASSAGE_TOKENS = 2000
+            passage_tokens = self.encoder.encode(source_passage)
+            if len(passage_tokens) > MAX_PASSAGE_TOKENS:
+                logger.info(f"Truncating source passage from {len(passage_tokens)} to {MAX_PASSAGE_TOKENS} tokens to respect limits.")
+                source_passage = self.encoder.decode(passage_tokens[:MAX_PASSAGE_TOKENS])
+                
             prompt = self.verification_prompt.format(
                 passage=source_passage,
                 type=claim.get("type", "UNKNOWN"),
@@ -108,6 +168,9 @@ class FactExtractionPipeline:
                 relation=claim.get("relation", ""),
                 object=claim.get("object", "")
             )
+            
+            num_tokens = len(self.encoder.encode(prompt)) + 50
+            self._wait_for_rate_limit(num_tokens)
             
             response = self.client.chat.completions.create(
                 model=self.model_name,

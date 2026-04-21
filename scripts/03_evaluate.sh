@@ -6,7 +6,7 @@ set -e
 # Configuration
 DATA_DIR="${DATA_DIR:-./data}"
 SCRIPT_DIR="${SCRIPT_DIR:-./src}"
-DATASET_JSON="${DATASET_JSON:-${DATA_DIR}/processed_dataset.json}"
+DATASET_JSON="${DATASET_JSON:-${DATA_DIR}/processed_dataset.jsonl}"
 GENERATIONS_JSON="${GENERATIONS_JSON:-${DATA_DIR}/generations.json}"
 EVALUATED_JSON="${EVALUATED_JSON:-${DATA_DIR}/evaluated_generations.json}"
 
