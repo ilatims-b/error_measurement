@@ -51,6 +51,7 @@ class FactExtractionPipeline:
         self.encoder = tiktoken.get_encoding("cl100k_base")
         self.extraction_prompt = extraction_prompt if extraction_prompt else EXTRACTION_PROMPT
         self.verification_prompt = verification_prompt if verification_prompt else VERIFICATION_PROMPT
+        self.max_passage_tokens = max_passage_tokens
         
         # Groq llama-3.3-70b-versatile limits: 30 RPM, 12,000 TPM
         # We will use slightly lower limits to be safe: 28 RPM, 11000 TPM
@@ -155,7 +156,7 @@ class FactExtractionPipeline:
         Uses the LLM API to verify a single claim against the source document.
         """
         try:
-            MAX_PASSAGE_TOKENS = 2000
+            MAX_PASSAGE_TOKENS = self.max_passage_tokens
             passage_tokens = self.encoder.encode(source_passage)
             if len(passage_tokens) > MAX_PASSAGE_TOKENS:
                 logger.info(f"Truncating source passage from {len(passage_tokens)} to {MAX_PASSAGE_TOKENS} tokens to respect limits.")
@@ -259,6 +260,7 @@ def main():
     parser.add_argument("--chunk-size", type=int, default=128, help="Token size per evaluation chunk")
     parser.add_argument("--extraction-prompt", type=str, default=None, help="Custom prompt for claim extraction")
     parser.add_argument("--verification-prompt", type=str, default=None, help="Custom prompt for claim verification")
+    parser.add_argument("--max-passage-tokens", type=int, default=2000, help="Max tokens per passage")
     args = parser.parse_args()
 
     # Load source map
@@ -272,7 +274,8 @@ def main():
         args.base_url, 
         args.model_name,
         extraction_prompt=args.extraction_prompt,
-        verification_prompt=args.verification_prompt
+        verification_prompt=args.verification_prompt,
+        max_passage_tokens=args.max_passage_tokens
     )
     
     out_path = Path(args.output_file)
