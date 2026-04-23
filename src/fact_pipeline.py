@@ -149,8 +149,6 @@ class FactExtractionPipeline:
             )
             raw_response = response.choices[0].message.content.strip()
     
-            # Strip any accidental markdown fences
-            raw = re.sub(r'```(?:json)?', '', raw).strip()
 
             # Robustly extract JSON array in case Groq returns chatty markdown
             import re
