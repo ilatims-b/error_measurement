@@ -52,6 +52,8 @@ class FactExtractionPipeline:
         self.extraction_prompt = extraction_prompt if extraction_prompt else EXTRACTION_PROMPT
         self.verification_prompt = verification_prompt if verification_prompt else VERIFICATION_PROMPT
         self.max_passage_tokens = max_passage_tokens
+        self.extraction_model_name = extraction_model_name
+        self.verification_model_name = verification_model_name
         
         # Groq llama-3.3-70b-versatile limits: 30 RPM, 12,000 TPM
         # We will use slightly lower limits to be safe: 28 RPM, 11000 TPM
@@ -123,7 +125,7 @@ class FactExtractionPipeline:
         raw_response = "N/A"
         try:
             response = self.client.chat.completions.create(
-                model=self.model_name,
+                model=self.extraction_model_name,
                 messages=[
                     {"role": "system", "content": self.extraction_prompt},
                     {"role": "user", "content": f"Text chunk to extract claims from:\n{text_chunk}"}
@@ -174,7 +176,7 @@ class FactExtractionPipeline:
             self._wait_for_rate_limit(num_tokens)
             
             response = self.client.chat.completions.create(
-                model=self.model_name,
+                model=self.verification_model_name,
                 messages=[
                     {"role": "user", "content": prompt}
                 ],
@@ -256,11 +258,12 @@ def main():
     parser.add_argument("--output-file", type=str, default="./data/evaluated_generations.json", help="Output verification JSON")
     parser.add_argument("--api-key", type=str, required=True, help="API Key for OpenAI/Grok/Groq")
     parser.add_argument("--base-url", type=str, default="https://api.x.ai/v1", help="API base URL")
-    parser.add_argument("--model-name", type=str, default="grok-2-latest", help="Model name for extraction/verification")
+    parser.add_argument("--verification-model-name", type=str, default="qwen3-32b", help="Model name for extraction/verification")
+    parser.add_argument("--extraction-model-name",type=str, default="llama-4-scout-17b", help="model for claim extraction")
     parser.add_argument("--chunk-size", type=int, default=128, help="Token size per evaluation chunk")
     parser.add_argument("--extraction-prompt", type=str, default=None, help="Custom prompt for claim extraction")
     parser.add_argument("--verification-prompt", type=str, default=None, help="Custom prompt for claim verification")
-    parser.add_argument("--max-passage-tokens", type=int, default=2000, help="Max tokens per passage")
+    parser.add_argument("--max-passage-tokens", type=int, default=5000, help="Max tokens per passage")
     args = parser.parse_args()
 
     # Load source map
@@ -275,7 +278,9 @@ def main():
         args.model_name,
         extraction_prompt=args.extraction_prompt,
         verification_prompt=args.verification_prompt,
-        max_passage_tokens=args.max_passage_tokens
+        max_passage_tokens=args.max_passage_tokens,
+        extraction_model_name=args.extraction_model_name,
+        verification_model_name=args.verification_model_name,
     )
     
     out_path = Path(args.output_file)
