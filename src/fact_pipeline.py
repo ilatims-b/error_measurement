@@ -290,6 +290,15 @@ def main():
     with open(args.source_file, "r") as f:
         for d in json.load(f):
             source_docs[d["document_id"]] = d["full_mda_text"]
+        
+    with open(args.gen_file, "r") as f:
+        gen_ids = {r["document_id"] for r in json.load(f)}
+    src_ids = set(source_docs.keys())
+    missing = gen_ids - src_ids
+    if missing:
+        logger.error(f"MISMATCH: {len(missing)}/{len(gen_ids)} generation doc_ids have no source. "
+                     f"Example missing: {next(iter(missing))}")
+        sys.exit(1)        
                 
     pipeline = FactExtractionPipeline(
         api_key=args.api_key, 
