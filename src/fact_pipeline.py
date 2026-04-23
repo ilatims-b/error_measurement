@@ -42,12 +42,11 @@ Return ONLY the letter (A, B, or C). Do not return anything else.
 """
 
 class FactExtractionPipeline:
-    def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", model_name: str = "llama-3.3-70b-versatile", extraction_prompt: str = None, verification_prompt: str = None):
+    def __init__(self, api_key: str, base_url: str = "https://api.groq.com/openai/v1", extraction_prompt: str = None, verification_prompt: str = None, max_passage_tokens: int = 5000, extraction_model_name: str = "llama-4-scout-17b", verification_model_name: str = "qwen3-32b", extraction_tpm: int = 29000, extraction_rpm: int = 28, verification_tpm: int = 5500, verification_rpm: int = 55):
         """
         Initializes the pipeline to use an OpenAI-compatible API (e.g. Grok or OpenAI).
         """
         self.client = OpenAI(api_key=api_key, base_url=base_url)
-        self.model_name = model_name
         self.encoder = tiktoken.get_encoding("cl100k_base")
         self.extraction_prompt = extraction_prompt if extraction_prompt else EXTRACTION_PROMPT
         self.verification_prompt = verification_prompt if verification_prompt else VERIFICATION_PROMPT
@@ -55,32 +54,47 @@ class FactExtractionPipeline:
         self.extraction_model_name = extraction_model_name
         self.verification_model_name = verification_model_name
         
-        # Groq llama-3.3-70b-versatile limits: 30 RPM, 12,000 TPM
-        # We will use slightly lower limits to be safe: 28 RPM, 11000 TPM
-        self.max_rpm = 28
-        self.max_tpm = 11000
-        self.request_timestamps = deque()
-        self.token_usage = deque()
+        self.max_rpm_verification = verification_rpm
+        self.max_tpm_verification = verification_tpm
+        self.max_rpm_extraction = extraction_rpm
+        self.max_tpm_extraction = extraction_tpm
+        
+        self.extraction_request_timestamps = deque()
+        self.extraction_token_usage = deque()
+        
+        self.verification_request_timestamps = deque()
+        self.verification_token_usage = deque()
 
-    def _wait_for_rate_limit(self, estimated_tokens: int):
+    def _wait_for_rate_limit(self, estimated_tokens: int, model_type: str = "extraction"):
         now = time.time()
         
-        # clean old timestamps
-        while self.request_timestamps and now - self.request_timestamps[0] > 60:
-            self.request_timestamps.popleft()
-        while self.token_usage and now - self.token_usage[0][0] > 60:
-            self.token_usage.popleft()
+        if model_type == "extraction":
+            timestamps = self.extraction_request_timestamps
+            tokens = self.extraction_token_usage
+            max_rpm = self.max_rpm_extraction
+            max_tpm = self.max_tpm_extraction
+        else:
+            timestamps = self.verification_request_timestamps
+            tokens = self.verification_token_usage
+            max_rpm = self.max_rpm_verification
+            max_tpm = self.max_tpm_verification
             
-        current_tokens_in_minute = sum(t[1] for t in self.token_usage)
+        # clean old timestamps
+        while timestamps and now - timestamps[0] > 60:
+            timestamps.popleft()
+        while tokens and now - tokens[0][0] > 60:
+            tokens.popleft()
+            
+        current_tokens_in_minute = sum(t[1] for t in tokens)
         
-        while len(self.request_timestamps) >= self.max_rpm or (current_tokens_in_minute + estimated_tokens) > self.max_tpm:
+        while len(timestamps) >= max_rpm or (current_tokens_in_minute + estimated_tokens) > max_tpm:
             now = time.time()
             sleep_times = []
-            if len(self.request_timestamps) >= self.max_rpm:
-                sleep_times.append(60 - (now - self.request_timestamps[0]))
-            if (current_tokens_in_minute + estimated_tokens) > self.max_tpm:
-                if self.token_usage:
-                    sleep_times.append(60 - (now - self.token_usage[0][0]))
+            if len(timestamps) >= max_rpm:
+                sleep_times.append(60 - (now - timestamps[0]))
+            if (current_tokens_in_minute + estimated_tokens) > max_tpm:
+                if tokens:
+                    sleep_times.append(60 - (now - tokens[0][0]))
                 else:
                     break # Single request exceeds TPM limit; must proceed and see if API accepts it
                     
@@ -89,19 +103,19 @@ class FactExtractionPipeline:
                 
             sleep_duration = max(sleep_times)
             if sleep_duration > 0:
-                logger.info(f"Rate limit approaching. Sleeping for {sleep_duration:.2f} seconds...")
+                logger.info(f"Rate limit approaching for {model_type}. Sleeping for {sleep_duration:.2f} seconds...")
                 time.sleep(sleep_duration + 0.1) # little extra to be safe
                 
             now = time.time()
             # clean again
-            while self.request_timestamps and now - self.request_timestamps[0] > 60:
-                self.request_timestamps.popleft()
-            while self.token_usage and now - self.token_usage[0][0] > 60:
-                self.token_usage.popleft()
-            current_tokens_in_minute = sum(t[1] for t in self.token_usage)
+            while timestamps and now - timestamps[0] > 60:
+                timestamps.popleft()
+            while tokens and now - tokens[0][0] > 60:
+                tokens.popleft()
+            current_tokens_in_minute = sum(t[1] for t in tokens)
 
-        self.request_timestamps.append(time.time())
-        self.token_usage.append((time.time(), estimated_tokens))
+        timestamps.append(time.time())
+        tokens.append((time.time(), estimated_tokens))
 
     def chunk_text(self, text: str, chunk_size: int = 128) -> List[str]:
         """
@@ -120,7 +134,7 @@ class FactExtractionPipeline:
         """
         prompt_text = f"Text chunk to extract claims from:\n{text_chunk}"
         num_tokens = len(self.encoder.encode(self.extraction_prompt + prompt_text)) + 1024
-        self._wait_for_rate_limit(num_tokens)
+        self._wait_for_rate_limit(num_tokens, model_type="extraction")
         
         raw_response = "N/A"
         try:
@@ -173,7 +187,7 @@ class FactExtractionPipeline:
             )
             
             num_tokens = len(self.encoder.encode(prompt)) + 50
-            self._wait_for_rate_limit(num_tokens)
+            self._wait_for_rate_limit(num_tokens, model_type="verification")
             
             response = self.client.chat.completions.create(
                 model=self.verification_model_name,
@@ -258,12 +272,16 @@ def main():
     parser.add_argument("--output-file", type=str, default="./data/evaluated_generations.json", help="Output verification JSON")
     parser.add_argument("--api-key", type=str, required=True, help="API Key for OpenAI/Grok/Groq")
     parser.add_argument("--base-url", type=str, default="https://api.x.ai/v1", help="API base URL")
-    parser.add_argument("--verification-model-name", type=str, default="qwen3-32b", help="Model name for extraction/verification")
-    parser.add_argument("--extraction-model-name",type=str, default="llama-4-scout-17b", help="model for claim extraction")
+    parser.add_argument("--verification-model-name", type=str, default="qwen/qwen3-32b", help="Model name for extraction/verification")
+    parser.add_argument("--extraction-model-name",type=str, default="meta-llama/llama-4-scout-17b-16e-instruct", help="model for claim extraction")
     parser.add_argument("--chunk-size", type=int, default=128, help="Token size per evaluation chunk")
     parser.add_argument("--extraction-prompt", type=str, default=None, help="Custom prompt for claim extraction")
     parser.add_argument("--verification-prompt", type=str, default=None, help="Custom prompt for claim verification")
     parser.add_argument("--max-passage-tokens", type=int, default=5000, help="Max tokens per passage")
+    parser.add_argument("--extraction_tpm", type =int, default=29000)
+    parser.add_argument("--extraction_rpm", type =int, default=28)
+    parser.add_argument("--verification_tpm", type =int, default=5500)
+    parser.add_argument("--verification_rpm", type =int, default=55)
     args = parser.parse_args()
 
     # Load source map
@@ -273,14 +291,17 @@ def main():
             source_docs[d["document_id"]] = d["full_mda_text"]
                 
     pipeline = FactExtractionPipeline(
-        args.api_key, 
-        args.base_url, 
-        args.model_name,
+        api_key=args.api_key, 
+        base_url=args.base_url, 
         extraction_prompt=args.extraction_prompt,
         verification_prompt=args.verification_prompt,
         max_passage_tokens=args.max_passage_tokens,
         extraction_model_name=args.extraction_model_name,
         verification_model_name=args.verification_model_name,
+        extraction_tpm=args.extraction_tpm,
+        extraction_rpm=args.extraction_rpm,
+        verification_tpm=args.verification_tpm,
+        verification_rpm=args.verification_rpm,
     )
     
     out_path = Path(args.output_file)
