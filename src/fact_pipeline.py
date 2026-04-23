@@ -142,13 +142,16 @@ class FactExtractionPipeline:
                 model=self.extraction_model_name,
                 messages=[
                     {"role": "system", "content": self.extraction_prompt},
-                    {"role": "user", "content": f"Text chunk to extract claims from:\n{text_chunk}"}
+                    {"role": "user", "content": text_chunk}
                 ],
                 temperature=0.0,
                 max_tokens=1024,
             )
             raw_response = response.choices[0].message.content.strip()
-            
+    
+            # Strip any accidental markdown fences
+            raw = re.sub(r'```(?:json)?', '', raw).strip()
+
             # Robustly extract JSON array in case Groq returns chatty markdown
             import re
             json_match = re.search(r'\[\s*\{.*?\}\s*\]', raw_response, re.DOTALL)
